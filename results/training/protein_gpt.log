@@ -1,0 +1,14 @@
+protein_gpt: 1,882,560 params on mps
+step     0  val 4.6257 bits/token       4s
+step   100  val 4.1242 bits/token     110s
+step   200  val 4.1163 bits/token    1007s
+step   300  val 4.1077 bits/token    1953s
+step   400  val 4.1008 bits/token    4890s
+step   500  val 4.0979 bits/token    5087s
+step   600  val 4.0928 bits/token    5130s
+step   700  val 4.0875 bits/token    5181s
+step   800  val 4.0865 bits/token    5230s
+step   900  val 4.0839 bits/token    5414s
+step  1000  val 4.0817 bits/token    6760s
+step  1100  val 4.0798 bits/token    6808s
+step  1200  val 4.0783 bits/token    6852s

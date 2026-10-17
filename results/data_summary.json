@@ -1,0 +1,52 @@
+{
+  "protein": {
+    "filter": {
+      "rows": 457140,
+      "nonstandard": 1619,
+      "duplicate": 77996,
+      "no_family": 37006
+    },
+    "splits": {
+      "val": {
+        "sequences": 33118,
+        "residues": 9446053,
+        "families": 794
+      },
+      "test_novel": {
+        "sequences": 29671,
+        "residues": 7268238,
+        "families": 790
+      },
+      "test_seen": {
+        "sequences": 8294,
+        "residues": 2255548,
+        "families": 2081
+      },
+      "train": {
+        "sequences": 269436,
+        "residues": 73356776,
+        "families": 6530
+      }
+    }
+  },
+  "dna": {
+    "genome_length": 4641652,
+    "cds_used": 4303,
+    "cds_skipped": 37,
+    "label_fraction": {
+      "noncoding": 0.14247793673459364,
+      "+cds_pos1": 0.13796553468463382,
+      "+cds_pos2": 0.13799591180036763,
+      "+cds_pos3": 0.13795131560918397,
+      "-cds_pos1": 0.14639701554532739,
+      "-cds_pos2": 0.14642782354213543,
+      "-cds_pos3": 0.14638301191041467,
+      "overlap": 0.004401450173343456
+    },
+    "split_bases": {
+      "train": 3741652,
+      "val": 450000,
+      "test": 450000
+    }
+  }
+}

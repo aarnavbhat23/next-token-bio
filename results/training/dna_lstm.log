@@ -1,0 +1,10 @@
+dna_lstm: 2,023,303 params on mps
+step     0  val 2.8331 bits/token       1s
+step   100  val 1.9639 bits/token      57s
+step   200  val 1.9513 bits/token     127s
+step   300  val 1.9268 bits/token     189s
+step   400  val 1.9107 bits/token     278s
+step   500  val 1.9082 bits/token    1769s
+step   600  val 1.9014 bits/token    1836s
+step   700  val 1.8961 bits/token    3786s
+step   800  val 1.8931 bits/token    4138s

@@ -1,0 +1,11 @@
+{
+  "test_seen": {
+    "kmer10_shared_with_train": 0.5198781716039249,
+    "frac_seqs_over_50pct_shared": 0.5176666666666667
+  },
+  "test_novel": {
+    "kmer10_shared_with_train": 0.012047765697400735,
+    "frac_seqs_over_50pct_shared": 0.0
+  },
+  "random_iid_false_positive_rate": 0.010074455899198167
+}
