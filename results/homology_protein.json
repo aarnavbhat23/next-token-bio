@@ -1,0 +1,230 @@
+{
+  "eval_subset": {
+    "sequences": 3000,
+    "families": 448,
+    "residues": 732276
+  },
+  "filters": {
+    "cluster": {
+      "command": "mmseqs easy-cluster all.fasta c30 tmp --min-seq-id 0.3 -c 0.8 --cov-mode 0 --threads 6",
+      "mmseqs_version": "18-8cc5c",
+      "sequences": 299107,
+      "min_seq_id": 0.3,
+      "coverage": 0.8,
+      "test_novel_sharing_cluster_with_train": 390,
+      "test_novel_total": 29671,
+      "dropped": 30,
+      "kept": 2970,
+      "residues_dropped": 6978,
+      "residues_kept": 725298,
+      "families_with_a_dropped_protein": 16,
+      "families_fully_dropped": 11,
+      "bits": {
+        "1-gram": {
+          "all": 4.165612615045269,
+          "kept": 4.16526364791327,
+          "dropped": 4.201884492790257,
+          "kept_ci95_family_bootstrap": [
+            4.154117559435381,
+            4.178165147534901
+          ],
+          "gain_over_1gram_all": 0.0,
+          "gain_over_1gram_kept": 0.0,
+          "gain_over_1gram_dropped": 0.0
+        },
+        "3-gram": {
+          "all": 4.131894285824895,
+          "kept": 4.1314521108654425,
+          "dropped": 4.1778542476680025,
+          "kept_ci95_family_bootstrap": [
+            4.119127442860387,
+            4.145194864515342
+          ],
+          "gain_over_1gram_all": 0.03371832922037399,
+          "gain_over_1gram_kept": 0.03381153704782758,
+          "gain_over_1gram_dropped": 0.024030245122254712
+        },
+        "5-gram": {
+          "all": 4.30028212463485,
+          "kept": 4.299871098437181,
+          "dropped": 4.343004463287404,
+          "kept_ci95_family_bootstrap": [
+            4.282213662118418,
+            4.319614682912918
+          ],
+          "gain_over_1gram_all": -0.1346695095895809,
+          "gain_over_1gram_kept": -0.13460745052391054,
+          "gain_over_1gram_dropped": -0.14111997049714642
+        },
+        "gpt": {
+          "all": 4.0789947509765625,
+          "kept": 4.0786848068237305,
+          "dropped": 4.111202239990234,
+          "kept_ci95_family_bootstrap": [
+            4.066528916093203,
+            4.091680296537076
+          ],
+          "gain_over_1gram_all": 0.08661786406870675,
+          "gain_over_1gram_kept": 0.08657884108953962,
+          "gain_over_1gram_dropped": 0.09068225280002284
+        },
+        "lstm": {
+          "all": 4.058667182922363,
+          "kept": 4.058302402496338,
+          "dropped": 4.096558570861816,
+          "kept_ci95_family_bootstrap": [
+            4.044418923127236,
+            4.072954232672069
+          ],
+          "gain_over_1gram_all": 0.10694543212290597,
+          "gain_over_1gram_kept": 0.1069612454169322,
+          "gain_over_1gram_dropped": 0.10532592192844081
+        }
+      }
+    },
+    "search": {
+      "command": "mmseqs easy-search q.fasta t.fasta hits.m8 tmp -s 7.5 -e 1e-3 --min-seq-id 0.3 -c 0.5 --cov-mode 2 --format-output query,target,fident,qcov,tcov,evalue,bits --threads 6",
+      "mmseqs_version": "18-8cc5c",
+      "min_seq_id": 0.3,
+      "query_coverage": 0.5,
+      "dropped": 203,
+      "kept": 2797,
+      "residues_dropped": 45115,
+      "residues_kept": 687161,
+      "families_with_a_dropped_protein": 62,
+      "families_fully_dropped": 21,
+      "bits": {
+        "1-gram": {
+          "all": 4.165612615045269,
+          "kept": 4.165127353464736,
+          "dropped": 4.17300378944272,
+          "kept_ci95_family_bootstrap": [
+            4.1538264683540485,
+            4.178084757686561
+          ],
+          "gain_over_1gram_all": 0.0,
+          "gain_over_1gram_kept": 0.0,
+          "gain_over_1gram_dropped": 0.0
+        },
+        "3-gram": {
+          "all": 4.131894285824895,
+          "kept": 4.131609491453819,
+          "dropped": 4.136232080013596,
+          "kept_ci95_family_bootstrap": [
+            4.119404396310244,
+            4.145560974107624
+          ],
+          "gain_over_1gram_all": 0.03371832922037399,
+          "gain_over_1gram_kept": 0.033517862010916666,
+          "gain_over_1gram_dropped": 0.036771709429123334
+        },
+        "5-gram": {
+          "all": 4.30028212463485,
+          "kept": 4.30001678109056,
+          "dropped": 4.304323657057294,
+          "kept_ci95_family_bootstrap": [
+            4.282438843406023,
+            4.319981083130678
+          ],
+          "gain_over_1gram_all": -0.1346695095895809,
+          "gain_over_1gram_kept": -0.1348894276258239,
+          "gain_over_1gram_dropped": -0.13131986761457437
+        },
+        "gpt": {
+          "all": 4.0789947509765625,
+          "kept": 4.079329967498779,
+          "dropped": 4.0738935470581055,
+          "kept_ci95_family_bootstrap": [
+            4.067108838377079,
+            4.092174540394208
+          ],
+          "gain_over_1gram_all": 0.08661786406870675,
+          "gain_over_1gram_kept": 0.08579738596595643,
+          "gain_over_1gram_dropped": 0.09911024238461419
+        },
+        "lstm": {
+          "all": 4.058667182922363,
+          "kept": 4.05963659286499,
+          "dropped": 4.0438947677612305,
+          "kept_ci95_family_bootstrap": [
+            4.046353133207618,
+            4.073639526716254
+          ],
+          "gain_over_1gram_all": 0.10694543212290597,
+          "gain_over_1gram_kept": 0.10549076059974549,
+          "gain_over_1gram_dropped": 0.1291090216814892
+        }
+      }
+    },
+    "cluster_or_search": {
+      "dropped": 204,
+      "kept": 2796,
+      "residues_dropped": 45220,
+      "residues_kept": 687056,
+      "families_with_a_dropped_protein": 62,
+      "families_fully_dropped": 22,
+      "bits": {
+        "1-gram": {
+          "all": 4.165612615045269,
+          "kept": 4.165108462951498,
+          "dropped": 4.17327251599481,
+          "kept_ci95_family_bootstrap": [
+            4.153754532406349,
+            4.177359802927958
+          ],
+          "gain_over_1gram_all": 0.0,
+          "gain_over_1gram_kept": 0.0,
+          "gain_over_1gram_dropped": 0.0
+        },
+        "3-gram": {
+          "all": 4.131894285824895,
+          "kept": 4.13158799120204,
+          "dropped": 4.136548013343695,
+          "kept_ci95_family_bootstrap": [
+            4.119267149356769,
+            4.144751122639608
+          ],
+          "gain_over_1gram_all": 0.03371832922037399,
+          "gain_over_1gram_kept": 0.03352047174945749,
+          "gain_over_1gram_dropped": 0.03672450265111493
+        },
+        "5-gram": {
+          "all": 4.30028212463485,
+          "kept": 4.2999837299037535,
+          "dropped": 4.304815824112256,
+          "kept_ci95_family_bootstrap": [
+            4.282303449780989,
+            4.319161634532469
+          ],
+          "gain_over_1gram_all": -0.1346695095895809,
+          "gain_over_1gram_kept": -0.13487526695225593,
+          "gain_over_1gram_dropped": -0.13154330811744597
+        },
+        "gpt": {
+          "all": 4.0789947509765625,
+          "kept": 4.0793137550354,
+          "dropped": 4.074155330657959,
+          "kept_ci95_family_bootstrap": [
+            4.066655351253132,
+            4.0915487460238165
+          ],
+          "gain_over_1gram_all": 0.08661786406870675,
+          "gain_over_1gram_kept": 0.08579470791609722,
+          "gain_over_1gram_dropped": 0.09911718533685132
+        },
+        "lstm": {
+          "all": 4.058667182922363,
+          "kept": 4.059621810913086,
+          "dropped": 4.044162750244141,
+          "kept_ci95_family_bootstrap": [
+            4.045392685851364,
+            4.072868365921028
+          ],
+          "gain_over_1gram_all": 0.10694543212290597,
+          "gain_over_1gram_kept": 0.10548665203841168,
+          "gain_over_1gram_dropped": 0.12910976575066968
+        }
+      }
+    }
+  }
+}
