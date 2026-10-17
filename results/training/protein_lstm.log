@@ -1,0 +1,14 @@
+protein_lstm: 2,027,415 params on mps
+step     0  val 4.5168 bits/token       1s
+step   100  val 4.0964 bits/token      21s
+step   200  val 4.0746 bits/token      46s
+step   300  val 4.0634 bits/token      71s
+step   400  val 4.0571 bits/token      93s
+step   500  val 4.0554 bits/token     118s
+step   600  val 4.0549 bits/token     146s
+step   700  val 4.0575 bits/token     174s
+step   800  val 4.0599 bits/token     198s
+step   900  val 4.0584 bits/token     221s
+step  1000  val 4.0628 bits/token     245s
+step  1100  val 4.0586 bits/token     275s
+step  1200  val 4.0612 bits/token     320s
