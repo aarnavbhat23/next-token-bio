@@ -1,0 +1,24 @@
+{
+  "genome": "bsubtilis",
+  "accession": "NC_000964.3",
+  "species": "Bacillus subtilis 168",
+  "genome_length": 4215606,
+  "cds_used": 4240,
+  "cds_skipped": 0,
+  "gc": 0.43514408130171556,
+  "label_fraction": {
+    "noncoding": 0.12315002872659352,
+    "+cds_pos1": 0.142739620353515,
+    "+cds_pos2": 0.14275527646559,
+    "+cds_pos3": 0.14273440164949,
+    "-cds_pos1": 0.1489021981655781,
+    "-cds_pos2": 0.14891453328418264,
+    "-cds_pos3": 0.1488969794615531,
+    "overlap": 0.0019069618934976372
+  },
+  "split_bases": {
+    "train": 3400000,
+    "val": 415606,
+    "test": 400000
+  }
+}
