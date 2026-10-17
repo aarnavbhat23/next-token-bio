@@ -4,3 +4,8 @@ results/cache/
 __pycache__/
 *.pyc
 .DS_Store
+# seed-sweep checkpoints (~8 MB each) and resume state stay local;
+# the first-release checkpoints/{protein,dna}_{gpt,lstm}.pt stay committed
+checkpoints/*_seed*.pt
+*.last.pt
+*.pt.tmp

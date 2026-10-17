@@ -11,22 +11,40 @@ from .vocab import BOS, N_SPECIAL
 
 ROOT = Path(__file__).resolve().parents[1]
 PROC = ROOT / "data" / "processed"
+SPLIT_SEED = 0  # which family split load_protein reads; set once per process
+
+
+def set_split_seed(seed: int) -> None:
+    global SPLIT_SEED
+    SPLIT_SEED = seed
+
+
+def protein_dir(split_seed: int | None = None) -> Path:
+    s = SPLIT_SEED if split_seed is None else split_seed
+    d = PROC / f"split{s}"
+    if s == 0 and not d.exists() and (PROC / "protein_train.npz").exists():
+        return PROC  # checkout prepared before per-split folders: split 0 lived here
+    return d
 
 
 def load_protein(split: str) -> dict[str, np.ndarray]:
-    return dict(np.load(PROC / f"protein_{split}.npz"))
+    return dict(np.load(protein_dir() / f"protein_{split}.npz"))
 
 
 def load_dna() -> dict[str, np.ndarray]:
     return dict(np.load(PROC / "dna_ecoli.npz"))
 
 
-def protein_subset(split: str, n: int, seed: int = 0) -> list[np.ndarray]:
-    """A fixed random subset of sequences (residue token ids, no BOS/EOS)."""
+def protein_subset(split: str, n: int, seed: int = 0, families: bool = False):
+    """A fixed random subset of sequences (residue token ids, no BOS/EOS).
+
+    With families=True, also return each picked sequence's family id.
+    """
     d = load_protein(split)
     rng = np.random.default_rng(seed)
-    pick = rng.choice(len(d["offsets"]), size=min(n, len(d["offsets"])), replace=False)
-    return [d["tokens"][d["offsets"][i] + 1: d["offsets"][i] + 1 + d["lengths"][i]] for i in sorted(pick)]
+    pick = np.sort(rng.choice(len(d["offsets"]), size=min(n, len(d["offsets"])), replace=False))
+    seqs = [d["tokens"][d["offsets"][i] + 1: d["offsets"][i] + 1 + d["lengths"][i]] for i in pick]
+    return (seqs, d["family"][pick]) if families else seqs
 
 
 def segments(mask: np.ndarray) -> list[tuple[int, int]]:
