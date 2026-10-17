@@ -1,0 +1,10 @@
+dna_gpt: 1,879,488 params on mps
+step     0  val 2.6338 bits/token       3s
+step   100  val 1.9557 bits/token     163s
+step   200  val 1.9524 bits/token     310s
+step   300  val 1.9406 bits/token     459s
+step   400  val 1.9346 bits/token     606s
+step   500  val 1.9314 bits/token     767s
+step   600  val 1.9304 bits/token     912s
+step   700  val 1.9293 bits/token    1077s
+step   800  val 1.9280 bits/token    1229s

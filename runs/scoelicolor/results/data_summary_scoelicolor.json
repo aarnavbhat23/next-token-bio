@@ -1,0 +1,24 @@
+{
+  "genome": "scoelicolor",
+  "accession": "NC_003888.3",
+  "species": "Streptomyces coelicolor A3(2)",
+  "genome_length": 8667507,
+  "cds_used": 7588,
+  "cds_skipped": 197,
+  "gc": 0.7211866110982085,
+  "label_fraction": {
+    "noncoding": 0.12872224966186932,
+    "+cds_pos1": 0.150173285121085,
+    "+cds_pos2": 0.15022081897366799,
+    "+cds_pos3": 0.15015701746765248,
+    "-cds_pos1": 0.13978506160998774,
+    "-cds_pos2": 0.13982071199942497,
+    "-cds_pos3": 0.13976879395655523,
+    "overlap": 0.0013520612097573154
+  },
+  "split_bases": {
+    "train": 6967507,
+    "val": 850000,
+    "test": 850000
+  }
+}
