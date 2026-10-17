@@ -53,6 +53,100 @@ For held-out proteins, composition recovers 0.031 of the LSTM's 0.063-bit advant
 
 The genome is always read 5′→3′ on the + strand. For + strand genes the most predictable base is codon position 3: after two bases of a codon, codon-usage bias narrows the third. For − strand genes the forward reading traverses each codon backwards, so the most predictable base is **codon position 1**, the one read last. The LSTM's advantage over the 8-gram is largest exactly there (0.08 bits, against 0.03 in non-coding DNA). This is the three-base periodicity GeneMark-style gene finders exploit; here a model trained only to predict the next base picks it up, and so it finds part of the reading-frame signal unsupervised.
 
+### Is the DNA gain reading-frame inference?
+
+The paragraph above reads the LSTM's codon-position gain as unsupervised reading-frame inference. Three tests check that reading: a frame-aware baseline, linear probes of the hidden states, and two more genomes. **Short answer: yes.** In all three genomes tested, knowing the frame accounts for all of the LSTM's advantage over the 8-gram. The LSTM's hidden state encodes the frame, and its gain sits at the bases where the frame is encoded. An explicit frame model with 5 bases of context does the same job better in *E. coli* and *B. subtilis* and ties the LSTM in the high-GC *S. coelicolor*.
+
+**A frame-aware baseline.** GeneMark (Borodovsky & McIninch, *Computers & Chemistry* 1993) models coding DNA as an inhomogeneous, three-periodic Markov chain: the distribution of a base given the five before it depends on the base's codon position. Here each annotation class gets its own order-5 Kneser-Ney table: non-coding, + and − strand codon positions 1–3, and the 0.4% of bases in two overlapping genes. The tables are counted on the n-grams' training stream (both strands) and hold 8 × 4⁵ contexts, against the LSTM's 2.0M weights. The model scores the same 447,696 held-out bases in three ways:
+
+* **true frame**: the target's class is read from the annotation (an oracle);
+* **frame inferred, HMM**: forward filtering in a hidden Markov model over the classes, as in GeneMark.hmm (Lukashin & Borodovsky, *Nucleic Acids Research* 1998). Gene-start, gene-end and phase transitions are counted on the training labels. It sees exactly the context windows the neural models see, 256–511 bases;
+* **frame inferred, window**: a posterior over the 7 classes from the preceding 256 bases, assuming the whole window is in one class.
+
+| bits/nt | non-coding | + codon 1 | + codon 2 | + codon 3 | − codon 1 | − codon 2 | − codon 3 | all |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| best n-gram (8-gram) | 1.980 | 1.962 | 1.962 | 1.860 | 1.885 | 1.941 | 1.959 | 1.936 |
+| frame Markov, true frame | 1.948 | **1.900** | **1.890** | 1.763 | **1.758** | **1.864** | **1.920** | 1.865 |
+| frame Markov, frame inferred (HMM) | **1.942** | 1.900 | 1.895 | **1.755** | 1.763 | 1.868 | 1.921 | **1.864** |
+| frame Markov, frame inferred (256-base window) | 1.990 | 1.919 | 1.910 | 1.776 | 1.787 | 1.884 | 1.936 | 1.887 |
+| LSTM | 1.947 | 1.915 | 1.911 | 1.778 | 1.801 | 1.888 | 1.934 | 1.882 |
+| GPT | 1.967 | 1.944 | 1.937 | 1.898 | 1.916 | 1.909 | 1.970 | 1.934 |
+
+* **Knowing the frame is enough.** Given the true frame, the Markov chain beats the LSTM in every class, 1.865 against 1.882 bits overall. With only 3 bases of context it already scores 1.879.
+* **So is inferring it.** The HMM gets no labels at test time. It scores 1.864, beats the LSTM in all seven classes, and its posterior names the right frame for 88.5% of coding bases. It edges the oracle in non-coding DNA and at + codon 3, probably because it can hedge where the annotation is wrong or a gene boundary is near.
+* **The non-coding gain is class knowledge too.** The LSTM saves 0.033 bits per non-coding base over the 8-gram. A separate non-coding table saves 0.032 (true class) to 0.038 (inferred).
+
+The frame model is trained with the annotation's labels and the LSTM never sees them, so this bounds what the frame can explain; it is not a fair contest. Put the other way round: the LSTM beats the 8-gram where the 8-gram is blind, because the 8-gram has no state that tracks the frame.
+
+![Bits saved over the 8-gram by class](results/figures/frame_classes.png)
+
+**How much context frame inference needs.** On the 20,000 *E. coli* targets of the context sweep, the HMM's frame accuracy on coding bases is 57% with 16 bases of context, 73% with 32, 84% with 64 and 88% with 128 or more. Its loss levels off by 128 bases. The LSTM's curve has the same shape but lags: its loss with 256 bases (1.887) is what the HMM reaches with about 48. That fits the LSTM's long-context gain on DNA being mostly frame inference, done less efficiently than a 3-periodic Markov chain does it; the composition control above explained almost none of it. The window version degrades past 128 bases because long windows straddle gene boundaries.
+
+![Loss against context, with frame models](results/figures/frame_context.png)
+
+**Linear probes.** For each base, a multinomial logistic regression reads the hidden state that predicts it and outputs one of the 7 classes. Probes are trained on 50,000 positions from the validation blocks and scored on 50,000 from the test blocks; L2 strength is chosen on held-out validation positions.
+
+| features (E. coli) | 7-class accuracy | class information (bits of 2.81) |
+|---|---:|---:|
+| majority class | 0.144 | 0 |
+| 8-gram context: 7 preceding bases, one-hot | 0.264 | 0.20 |
+| untrained LSTM, best layer | 0.263 | 0.17 |
+| GPT, last block | 0.688 | 1.52 |
+| LSTM, layer 2 | **0.789** | **1.88** |
+| frame Markov HMM posterior (not a probe) | 0.858 | — |
+
+The trained LSTM's state carries the frame; nothing an 8-gram sees does, and neither does an untrained network. The GPT, which gains least, encodes it least, and in *E. coli* it is worse than the 8-gram at exactly + codon 3 and − codon 1. The LSTM's gain also sits where its frame is. At − codon 1 the LSTM saves 0.104 bits over the 8-gram where the layer-2 probe names the class correctly, and nothing (−0.001) where it does not. At + codon 3 the figures are 0.092 and 0.046. This is correlational: bases the probe gets wrong may be harder for other reasons, such as gene ends and short genes.
+
+![Linear probes for the reading frame](results/figures/frame_probe.png)
+
+**Two more genomes.** The same pipeline and budget (800 × 32 × 512 tokens per model, the same 50 kb block split) were run on *Bacillus subtilis* 168 (NC_000964.3, 4.2 Mb, 43.5% GC) and the high-GC *Streptomyces coelicolor* A3(2) (NC_003888.3, 8.7 Mb, 72.1% GC).
+
+*B. subtilis* 168, 397,952 held-out bases:
+
+| bits/nt | non-coding | + codon 1 | + codon 2 | + codon 3 | − codon 1 | − codon 2 | − codon 3 | all |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| best n-gram (8-gram) | 1.933 | 1.970 | 1.905 | 1.922 | 1.955 | 1.910 | 1.948 | 1.935 |
+| LSTM | 1.928 | 1.911 | 1.866 | 1.882 | 1.839 | 1.874 | 1.931 | 1.888 |
+| GPT | 1.950 | 1.928 | 1.895 | 1.945 | 1.925 | 1.892 | 1.973 | 1.929 |
+| frame Markov, true frame | **1.905** | **1.888** | **1.847** | **1.848** | **1.808** | **1.859** | **1.922** | **1.866** |
+| frame Markov, frame inferred (HMM) | 1.930 | 1.891 | 1.852 | 1.854 | 1.813 | 1.863 | 1.924 | 1.873 |
+
+*S. coelicolor* A3(2), 845,648 held-out bases:
+
+| bits/nt | non-coding | + codon 1 | + codon 2 | + codon 3 | − codon 1 | − codon 2 | − codon 3 | all |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| best n-gram (8-gram) | 1.919 | 1.821 | 2.038 | 1.351 | 1.777 | 2.024 | 1.405 | 1.762 |
+| LSTM | **1.856** | **1.775** | 1.935 | **1.214** | 1.700 | 1.951 | **1.272** | **1.672** |
+| GPT | 1.883 | 1.792 | 1.952 | 1.296 | 1.781 | 1.972 | 1.293 | 1.710 |
+| frame Markov, true frame | 1.868 | 1.779 | **1.927** | 1.225 | **1.690** | **1.944** | 1.278 | 1.673 |
+| frame Markov, frame inferred (HMM) | 1.872 | 1.781 | 1.932 | 1.224 | 1.694 | 1.949 | 1.278 | 1.676 |
+
+* **Where the gain is largest depends on the genome, and the frame model follows it.** In *B. subtilis* the LSTM gains most at − codon 1 (0.116 bits over the 8-gram), as in *E. coli*. In *S. coelicolor* it gains most at codon position 3 on both strands (0.137 at + codon 3, 0.133 at − codon 3). With 72% GC, third positions are nearly always G or C, so the third base is predictable whether it is read last (+ strand) or first (− strand). The "last base read" pattern above is therefore an *E. coli* and *B. subtilis* pattern, not a general one. Across the seven classes, the LSTM's gain over the 8-gram correlates with the frame HMM's at r = 0.985 (*E. coli*), 0.988 (*B. subtilis*) and 0.974 (*S. coelicolor*).
+* **The frame accounts for the LSTM's gain in all three genomes.** The LSTM saves 0.053, 0.047 and 0.090 bits per base over the 8-gram; the frame HMM saves 0.072, 0.062 and 0.086.
+* **In the high-GC genome the LSTM catches up.** It ties the frame models overall (1.672 against 1.673 with the true frame) and beats them in non-coding DNA (1.856 against 1.868). The strong GC3 periodicity makes the frame easy to find: the HMM is 84% right on coding bases with 32 bases of context, against 73% in *E. coli*. The LSTM's context curve runs alongside the HMM's there instead of lagging it.
+
+**The probes agree in every genome.** The LSTM's state gives up the class far better than an 8-gram's context or an untrained network does. In *S. coelicolor* even 7 bases go some way (0.407), because the GC-rich third positions show the frame locally. The LSTM's gain again sits where the probe decodes the class: in *B. subtilis* it saves 0.124 bits at − codon 1 where the class is decoded and 0.008 where it is not; in *S. coelicolor*, 0.149 against 0.028 at + codon 3.
+
+| 7-class probe accuracy | *E. coli* | *B. subtilis* | *S. coelicolor* |
+|---|---:|---:|---:|
+| majority class | 0.144 | 0.132 | 0.134 |
+| 8-gram context, per-position one-hot | 0.264 | 0.249 | 0.407 |
+| untrained network, best layer | 0.263 | 0.273 | 0.332 |
+| GPT, last block | 0.688 | 0.760 | 0.851 |
+| LSTM, layer 2 | 0.789 | 0.817 | 0.885 |
+| frame Markov HMM posterior (not a probe) | 0.858 | 0.912 | 0.900 |
+
+![Bits saved over the 8-gram by class, three genomes](results/figures/frame_genomes.png)
+
+**Caveats.** One seed and one block split per genome, so differences under ~0.01 bits are noise. The probe link is correlational. Kovalic, Zhang, Golkar & Ho ("Emergent Codon Frame Representations and Causal Translation Steering in Genomic Foundation Models", NeurIPS 2026 workshop XAI4Science, poster) go further for four genomic foundation models. They read codon phase out with linear probes, and rotating a two-dimensional codon-phase subspace by 120° shifts the frame the model translates in. That causal test is not attempted here. The second and third annotations come partly from gene finders that use Markov models of their own: 2,318 of B. subtilis's 4,240 CDS cite AMIGene, and S. coelicolor's RefSeq CDS are NCBI PGAP calls (protein homology and GeneMarkS-2+). If anything, that favours the frame Markov rows.
+
+```bash
+./scripts/train_genomes.sh   # B. subtilis and S. coelicolor: download, label, train LSTM + GPT (runs/<genome>/)
+./scripts/frame_all.sh       # frame baselines, probes, figures and results/frame/summary.md
+```
+
+The E. coli rows use the first-release 800-step checkpoints (`checkpoints/dna_lstm.pt`, `checkpoints/dna_gpt.pt`) and reproduce `results/neural_dna.json` and `results/context_dna.json` exactly. The analysis code is in `nexttok/frame.py`, `nexttok/probe.py` and `nexttok/genome.py`; per-genome numbers are in `results/frame/`.
+
 ![Loss along the N-terminus and by residue](results/figures/fig4_position_residue.png)
 
 ### Sampling from the GPT
