@@ -261,6 +261,8 @@ Next-token prediction on biological sequence is well established. This repositor
 
 Evaluation uses a fixed random 3,000 sequences from each test split. Validation, used only for checkpoint selection, is itself made of held-out families.
 
+**Other family splits.** `prepare --split_seed N` salts the family hash with N, so each seed holds out a different 10% of families; seed 0 is the unsalted hash above, and every number in this README uses it. Splits 1 and 2 hold out 784 and 772 families, and any two of the three splits share 65–80 held-out families, about what independent 10% draws give.
+
 **Split audit.** 52.0% of the 10-mers in seen-family test proteins also occur in training, against 1.2% for held-out families. The bitset used for the check has a measured false-positive rate of 1.0%, so true sharing for held-out families is about 0.2%. No held-out sequence shares more than half its 10-mers with training; 51.8% of seen-family sequences do. Family annotation is not a homology guarantee, but this split leaks very little.
 
 **DNA data.** E. coli K-12 MG1655 (NC_000913.3, 4.64 Mb) with RefSeq CDS annotation; 4,303 CDS are used, and 37 pseudogenes or non-multiples of three are skipped. The genome is cut into 50 kb blocks: every tenth block is test and another tenth is validation. Training windows are reverse-complemented half the time. Each scored test base has at least 256 bases of preceding context, for every model.
@@ -284,13 +286,16 @@ Python 3.14, PyTorch 2.13 and NumPy 2.5 were used.
 ```bash
 python -m pip install -r requirements.txt
 python -m unittest discover -s tests -v
-./scripts/download.sh            # ~80 MB from UniProt and NCBI
-python -m nexttok.prepare        # splits + data/processed, writes results/data_summary.json
-./scripts/train_all.sh           # four neural models (skippable: checkpoints/ is committed)
-./scripts/evaluate_all.sh        # every number and figure in this README
+./scripts/download.sh                          # ~80 MB from UniProt and NCBI
+python -m nexttok.prepare --split_seed 0 1 2   # family splits into data/processed/split<N>/
+python -m nexttok.check_v1                     # re-scores checkpoints/, compares with every first-release JSON
+./scripts/train_all.sh                         # seed sweep: 18 runs, one at a time, resumable
+./scripts/evaluate_all.sh                      # intervals over splits and seeds, figures, results/summary.md
 ```
 
-`results/` holds every JSON the README quotes, the training histories and `summary.md`. The trained checkpoints are in `checkpoints/`, and the held-out accessions in `data/processed/*_accessions.txt` once `prepare` has run. GPT samples are written to `results/generated_proteins.fasta`.
+The numbers above are the first release: family split 0, seed 0, 1,200 protein and 800 DNA steps. Its checkpoints are `checkpoints/<kind>_<model>.pt` and its results `results/<part>_<kind>.json`; the training histories are in `results/training/`. `check_v1` scores those checkpoints with the current evaluation code (as a spare seed, with a temporary cache) and compares every number with the committed JSONs. The held-out accessions are in `data/processed/split<N>/*_accessions.txt` once `prepare` has run.
+
+The seed sweep trains the protein GPT and LSTM on 3 family splits × 2 seeds and the DNA models on 3 seeds, at 3,600 and 2,400 steps (3× the first release's tokens). Each run is `checkpoints/<kind>_<model>[_split<N>]_seed<M>.pt`; these stay local. Evaluation writes `results/protein_split<N>/` and `results/dna/`, and the report pools them into mean ± sd across runs plus per-run bootstrap intervals over held-out families (`results/intervals.json`). Every evaluation during training also writes the full training state to `checkpoints/<run>.last.pt`. `train --resume` continues from it and ends with the same weights as an uninterrupted run (tested), and `train_all.sh` skips finished runs and resumes the rest. `NEXTTOK_DEVICE=cpu` keeps training or evaluation off a shared GPU, and `PYTHON=...` picks the interpreter for both scripts.
 
 ## Data and licences
 

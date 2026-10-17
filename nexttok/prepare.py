@@ -7,7 +7,9 @@ Protein (UniProtKB/Swiss-Prot, reviewed, length 50-512):
   * family key = first clause of the "Protein families" field (so
     "Protein kinase superfamily, Ser/Thr protein kinase family" groups at
     the superfamily level)
-  * whole families are hashed into train (80%) / val (10%) / test_novel (10%)
+  * whole families are hashed into train (80%) / val (10%) / test_novel (10%);
+    --split_seed salts the hash, so each seed holds out a different set of
+    families (seed 0 is the unsalted hash of the first release)
   * test_seen = 3% of sequences drawn at random from *training* families
 
   test_seen vs test_novel is the central contrast: same distribution of
@@ -31,11 +33,11 @@ from pathlib import Path
 
 import numpy as np
 
+from .data import PROC
 from .vocab import BOS, EOS, encode_table
 
 ROOT = Path(__file__).resolve().parents[1]
 RAW = ROOT / "data" / "raw"
-OUT = ROOT / "data" / "processed"
 
 DNA_BLOCK = 50_000
 DNA_LABELS = ["noncoding", "+cds_pos1", "+cds_pos2", "+cds_pos3",
@@ -46,8 +48,9 @@ def family_key(field: str) -> str:
     return re.split(r"[,;]", field)[0].strip().lower()
 
 
-def family_bucket(key: str) -> str:
-    h = int(hashlib.sha1(key.encode()).hexdigest(), 16) % 100
+def family_bucket(key: str, split_seed: int = 0) -> str:
+    salt = f"{split_seed}:" if split_seed else ""  # seed 0 keeps the first release's split
+    h = int(hashlib.sha1((salt + key).encode()).hexdigest(), 16) % 100
     return "train" if h < 80 else ("val" if h < 90 else "test_novel")
 
 
@@ -62,7 +65,7 @@ def pack(seqs: list[np.ndarray]) -> dict[str, np.ndarray]:
     return {"tokens": tokens, "offsets": offsets, "lengths": lengths}
 
 
-def prepare_protein(seed: int = 0) -> dict:
+def prepare_protein(seed: int = 0, split_seed: int = 0) -> dict:
     table = encode_table("protein")
     seen: set[str] = set()
     rows = {"train": [], "val": [], "test_novel": []}
@@ -84,7 +87,7 @@ def prepare_protein(seed: int = 0) -> dict:
                 stats["no_family"] += 1
                 continue
             key = family_key(fam)
-            rows[family_bucket(key)].append((acc, key, enc))
+            rows[family_bucket(key, split_seed)].append((acc, key, enc))
 
     rng = np.random.default_rng(seed)
     train = rows.pop("train")
@@ -93,15 +96,16 @@ def prepare_protein(seed: int = 0) -> dict:
     rows["train"] = [r for r, t in zip(train, is_seen_test) if not t]
 
     fam_index = {k: i for i, k in enumerate(sorted({r[1] for v in rows.values() for r in v}))}
-    summary = {"filter": stats, "splits": {}}
-    OUT.mkdir(parents=True, exist_ok=True)
+    summary = {"split_seed": split_seed, "filter": stats, "splits": {}}
+    out = PROC / f"split{split_seed}"
+    out.mkdir(parents=True, exist_ok=True)
     for split, rs in rows.items():
         order = rng.permutation(len(rs))
         rs = [rs[i] for i in order]
         packed = pack([r[2] for r in rs])
         packed["family"] = np.array([fam_index[r[1]] for r in rs], dtype=np.int32)
-        np.savez(OUT / f"protein_{split}.npz", **packed)
-        (OUT / f"protein_{split}_accessions.txt").write_text("\n".join(r[0] for r in rs) + "\n")
+        np.savez(out / f"protein_{split}.npz", **packed)
+        (out / f"protein_{split}_accessions.txt").write_text("\n".join(r[0] for r in rs) + "\n")
         summary["splits"][split] = {
             "sequences": len(rs),
             "residues": int(packed["lengths"].sum()),
@@ -110,7 +114,7 @@ def prepare_protein(seed: int = 0) -> dict:
     train_f = {r[1] for r in rows["train"]}
     for split in ("val", "test_novel"):
         assert not train_f & {r[1] for r in rows[split]}, f"family leak into {split}"
-    (OUT / "protein_families.json").write_text(json.dumps(sorted(fam_index, key=fam_index.get)))
+    (out / "protein_families.json").write_text(json.dumps(sorted(fam_index, key=fam_index.get)))
     return summary
 
 
@@ -149,7 +153,7 @@ def prepare_dna() -> dict:
 
     block = np.arange(n) // DNA_BLOCK
     split = np.where(block % 10 == 9, 2, np.where(block % 10 == 4, 1, 0)).astype(np.int8)
-    np.savez(OUT / "dna_ecoli.npz", tokens=enc, labels=labels, split=split, block=block.astype(np.int32))
+    np.savez(PROC / "dna_ecoli.npz", tokens=enc, labels=labels, split=split, block=block.astype(np.int32))
     names = ["train", "val", "test"]
     return {
         "genome_length": n,
@@ -162,10 +166,14 @@ def prepare_dna() -> dict:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--seed", type=int, default=0, help="draw of the seen-family test set")
+    ap.add_argument("--split_seed", type=int, nargs="+", default=[0],
+                    help="family split(s); each is written to data/processed/split<N>/")
     args = ap.parse_args()
-    OUT.mkdir(parents=True, exist_ok=True)
-    summary = {"protein": prepare_protein(args.seed), "dna": prepare_dna()}
+    PROC.mkdir(parents=True, exist_ok=True)
+    summary = {"dna": prepare_dna(), "protein": {}}
+    for s in args.split_seed:
+        summary["protein"][f"split{s}"] = prepare_protein(args.seed, s)
     (ROOT / "results").mkdir(exist_ok=True)
     (ROOT / "results" / "data_summary.json").write_text(json.dumps(summary, indent=2))
     print(json.dumps(summary, indent=2))
