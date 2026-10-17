@@ -59,6 +59,77 @@ The genome is always read 5′→3′ on the + strand. For + strand genes the mo
 
 The GPT generated 200 proteins at temperature 1, with mean length 276 against 244 for natural held-out sequences. They contain no homopolymer runs of six or more, have training-like amino acid composition (Jensen–Shannon divergence 0.0008), and share 1.06% of their 10-mers with training. That overlap is at the bitset false-positive floor (1.01%), so the samples are not copies. **This is not evidence of foldable or functional proteins:** composition-matched random sequences pass the same three checks (1.01%, JS 0.00004). Structure prediction or experiments would be needed.
 
+## Follow-up: the residual, a stricter split, and variant effects
+
+Three follow-up questions about the held-out-family results. They use the same first-release checkpoints, so the one-seed caveat under *Limits* applies. Code is in `nexttok/residual.py`, `nexttok/homology.py` and `nexttok/variants.py`. Numbers are in `results/residual_protein.json`, `results/homology_protein.json`, `results/variants_protein.json` and `results/residual_summary.md`.
+
+![Explicit baselines against the LSTM's residual](results/figures/fig5_residual.png)
+
+### What is the ~0.03 bits beyond composition?
+
+At k = 256 the composition control leaves 0.032 bits per residue of the LSTM's held-out advantage unexplained (4.115 against 4.084). Each row below adds candidate statistics to the 3-gram + own-composition cache. Every row is scored on the same 20,000 held-out targets. Feature weights are estimated on 500,000 targets from **training** families, as the n-gram is. Mixing weights and L2 strength are chosen on **validation** families, as for the cache; the same grid reproduces the cache's λ = 0.55, α = 0.5 exactly.
+
+| at k = 256, held-out families | bits | LSTM residual closed |
+|---|---:|---:|
+| 3-gram + own-composition cache (above) | 4.115 | — |
+| + hydrophobic / not at lags 2, 3, 4, 7, mixed linearly like the cache | 4.115 | 0% |
+| + the same 16 lag patterns as a log-linear correction | 4.113 | 6% |
+| + composition of the last 8, 16, …, 128 residues as well as 256 | 4.113 | 8% |
+| + residue identity at every lag from 2 to 16 | 4.107 | 28% |
+| GPT | 4.100 | 48% |
+| LSTM | 4.084 | 100% |
+
+1. **Hydrophobic periodicity is real but small.** The lag 2/3/4/7 hydrophobic patterns gain 0.002 bits (6% of the residual) as a log-linear correction. Mixed in linearly, as the cache mixes in composition, they gain nothing. A three-class version (hydrophobic, polar, charged) does no better (4.114). Taken one lag at a time (middle panel), the hydrophobic class helps most at lag 2 (1.5 millibits), the strand alternation, and shows no helical 3–4–7–11 pattern. Residue *identity* helps most at lags 3 and 4 (2.7 millibits each). Those are the spacings at which a helix places side chains next to each other, for example in i/i+4 salt bridges, and a hydrophobic/polar class cannot see such pairings.
+2. **Additive pairwise lag statistics explain about a quarter.** Local composition, hydrophobic lags and residue identity at every lag up to 16 (6,320 weights) together close 28%. About 0.023 bits, 72% of the residual, lies beyond composition, periodicity and any sum of pairwise lag effects. What remains is interactions among several residues and longer-range pairs. Protein language models are known to store this kind of information as statistics of coevolving, contacting sequence motifs ([Zhang et al., *PNAS* 2024](https://doi.org/10.1073/pnas.2406285121)). This analysis does not show that this LSTM does the same.
+3. **The residual is spread across structural classes** (right panel). No secondary-structure predictor is pip-installable, so targets are split by a hydrophobic-moment proxy computed on the 11 residues around each target, with the target itself left out. The LSTM gains 38 millibits per target where that window is helix-like [95% interval 27–48, resampling proteins], 25 where it is strand-like [14–36] and 32 elsewhere [23–41]. Targets predicted disordered by [metapredict](https://github.com/idptools/metapredict) gain more (51 [22–80]), and transmembrane-like hydrophobic stretches much more (158 [88–223]). They are only 8% and 1% of targets, though, and carry 13% and 6% of the gain. By next residue, the gain is largest for M, C, Q, E and L.
+4. **Two traps that produced false positives on the way.** Fitting the 320 lag-pattern weights on validation families instead of training families lowers validation loss to 4.110 but makes held-out loss *worse* (4.124): with few families, the weights learn family-specific regularities. Similarly, an earlier version of the per-target split left the target residue inside the moment window, and helix-like targets then appeared to carry half of the LSTM's gain.
+
+![Homology filter and zero-shot variant effects](results/figures/fig6_homology_variants.png)
+
+### A stricter split: no held-out protein with a 30% relative in training
+
+Family labels are not a homology guarantee, so the 3,000 evaluated held-out proteins were filtered two ways with MMseqs2 (Steinegger & Söding, 2017). Clustering all 299,107 training and held-out proteins at 30% identity and 80% coverage puts only 390 of the 29,671 held-out proteins (1.3%) in a cluster with any training protein; 30 of them are in the evaluation set. A more sensitive search (`-s 7.5`) of the 3,000 against training finds 203 with a hit of ≥ 30% identity over at least half the protein. Together that drops 204 proteins from 62 of the 448 evaluated families.
+
+| bits per residue, held-out families | all 3,000 | without cluster mates (2,970) | without any 30% relative (2,796) | the 204 dropped |
+|---|---:|---:|---:|---:|
+| 1-gram (composition) | 4.166 | 4.165 | 4.165 | 4.173 |
+| 3-gram | 4.132 | 4.131 | 4.132 | 4.137 |
+| 5-gram | 4.300 | 4.300 | 4.300 | 4.305 |
+| GPT | 4.079 | 4.079 | 4.079 | 4.074 |
+| LSTM | 4.059 | 4.058 | 4.060 | 4.044 |
+| LSTM gain over composition | 0.107 | 0.107 | 0.106 | 0.129 |
+
+The held-out numbers move by at most 0.001 bits, far inside the family-bootstrap interval (LSTM without any 30% relative: 4.060, 95% interval 4.045–4.073). The 204 dropped proteins do give the LSTM a larger gain (0.129 bits), but they are 6% of residues. The 5-gram, which exploits near-identical stretches, does no better on them, so these are distant relatives rather than copies. At this resolution the family split is clean. The dropped accessions are listed in `results/homology/`.
+
+### Does lower perplexity help predict variant effects?
+
+Six small [ProteinGym](https://proteingym.org) deep mutational scans (Notin et al., NeurIPS 2023) were scored zero-shot. All have wild types of at most 512 residues, and together they cover every selection type. Each mutant is scored by the autoregressive log-likelihood ratio over the full sequence, log₂ P(mutant) − log₂ P(wild type), with no masking. For the composition-only 1-gram this reduces to log₂ p(new residue) − log₂ p(old residue), summed over substitutions. The table gives Spearman ρ against measured fitness, over all mutants in each file. Published ProteinGym values on the same assays are shown for scale.
+
+| assay (selection) | mutants | 1-gram | 3-gram | GPT | LSTM | CARP 600K | ESM2 8M | ESM2 650M |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| BLAT_ECOLX, TEM-1 (fitness) | 989 | 0.099 | 0.038 | 0.098 | 0.059 | 0.040 | 0.362 | 0.704 |
+| P53_HUMAN (fitness) | 1,048 | 0.043 | 0.045 | −0.006 | −0.001 | 0.040 | 0.095 | 0.678 |
+| CCDB_ECOLI (activity) | 1,176 | −0.065 | −0.085 | −0.062 | −0.151 | −0.050 | −0.006 | 0.466 |
+| NUD15_HUMAN (abundance) | 2,844 | 0.028 | 0.014 | −0.046 | 0.008 | 0.015 | 0.299 | 0.526 |
+| RASK_HUMAN, DARPin K55 (binding) | 24,873 | 0.126 | 0.131 | 0.147 | **0.312** | 0.298 | 0.573 | 0.652 |
+| NUSA_ECOLI domain (stability) | 2,028 | 0.182 | 0.203 | 0.058 | 0.186 | 0.246 | 0.322 | 0.494 |
+| mean | | 0.069 | 0.058 | 0.032 | 0.069 | 0.098 | 0.274 | 0.587 |
+
+1. **No, not at this scale.** Averaged over the six assays the LSTM ties composition alone (ρ = 0.069 each), and the GPT does worse (0.032). This is despite their 0.107- and 0.087-bit perplexity advantages on held-out families. Per-assay 95% intervals, resampling mutants, are about ±0.01–0.06. On CcdB every model anticorrelates with fitness, the LSTM most (−0.15).
+2. **The one clear exception is KRAS binding.** There the LSTM reaches ρ = 0.31 against 0.13 for composition (difference 0.18–0.20, 95% interval). KRAS is also the wild type the LSTM predicts best (3.92 bits per residue against 4.21 for composition): no exact copy is in training, but 99% of its 10-mers are. Familiarity alone does not explain it, though. The BLAT, p53 and NUDT15 wild types are themselves in our training split, and on those the models gain nothing over composition.
+3. **This matches published models of similar size.** CARP at 600k parameters averages 0.098 on these assays. The distance to ESM2-650M (0.59) reflects model and data scale. A 0.1-bit perplexity edge on held-out families does not close it.
+
+Reproduce this section (MMseqs2 and metapredict are optional extras, not in `requirements.txt`):
+
+```bash
+python -m pip install metapredict            # disorder split; skipped if absent
+brew install mmseqs2                         # or: conda install -c bioconda mmseqs2
+python -m nexttok.residual                   # ~15 min on an M3
+python -m nexttok.homology cluster && python -m nexttok.homology search && python -m nexttok.homology score
+./scripts/download_proteingym.sh && python -m nexttok.variants
+python -m nexttok.residual_report            # figures 5-6 and results/residual_summary.md
+```
+
 ## Limits
 
 * **Small, undertrained models.** About 2M parameters and 13–20M training tokens each, against billions for ProtGPT2 or Evo. The GPT is behind the LSTM here, most likely because Transformers need more tokens to overtake recurrent models at this size. Its validation loss was still falling (4.087 → 4.078 bits over the last 400 steps). Do not read the GPT–LSTM ordering as a general architecture result.
