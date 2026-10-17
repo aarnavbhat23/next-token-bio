@@ -1,14 +1,18 @@
 """Evaluation suite. Every model is scored on the *same* target positions.
 
-Parts (run independently, each writes results/<part>_<kind>.json):
+Parts (run independently, each writes results/<group>/<part>.json, where the
+group is protein_split<N> for a protein family split and dna for the genome):
   ngram     Kneser-Ney ladder (protein orders 1-6, DNA orders 1-12)
   neural    GPT and LSTM checkpoints, full available context
   context   truncated-context sweep: predict x_i from only the last k symbols
+  cache     composition control: short n-gram mixed with the window's own counts
   audit     shared 10-mer rate between each test split and the training data
   generate  sample proteins from the GPT and compare them with natural ones
 
-Per-target log-probabilities go to results/cache/ (git-ignored) so that the
-report can slice them by position, residue, or codon phase.
+Neural parts take --seeds and key results by "<model>/seed<N>"; rerunning a
+part for more seeds merges into its JSON. Per-target log-probabilities go to
+results/cache/<group>.npz (git-ignored) so that the report can slice them by
+position, residue or codon phase, and bootstrap over families or genome chunks.
 """
 
 from __future__ import annotations
@@ -21,10 +25,10 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from . import ngram
+from . import data, ngram
 from .data import load_dna, load_protein, protein_subset, segments
 from .models import Config, build
-from .train import device
+from .train import device, run_name
 from .vocab import AMINO, BOS, EOS, N_SPECIAL, symbol_ids, vocab_size
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -36,6 +40,11 @@ SWEEP_K = [1, 2, 4, 8, 16, 32, 64, 128, 256]
 SWEEP_N = 20000        # targets per split in the context sweep
 PROTEIN_MAX_ORDER = 6
 DNA_ORDERS = [1, 2, 3, 4, 6, 8, 10, 12]
+DNA_CHUNK = 5000       # bootstrap unit for the genome; proteins resample families
+
+
+def group(kind: str) -> str:
+    return f"protein_split{data.SPLIT_SEED}" if kind == "protein" else "dna"
 
 
 def summarise(logp: np.ndarray, correct: np.ndarray) -> dict:
@@ -108,7 +117,9 @@ def run_ngram(kind: str) -> dict:
         model = ngram.KneserNey.fit(flat, tg, PROTEIN_MAX_ORDER, 21, 20)
         orders = range(1, PROTEIN_MAX_ORDER + 1)
         for split in ("test_seen", "test_novel"):
-            ef, et, _, _, _ = protein_targets(split)
+            ef, et, _, _, seqs = protein_targets(split)
+            _, fam = protein_subset(split, N_EVAL, families=True)
+            cache[f"{split}/cluster"] = np.repeat(fam, [len(q) for q in seqs])
             out[split] = {"uniform": summarise(np.full(len(et), -math.log2(20)), np.zeros(len(et)))}
             for o in orders:
                 logp, pred, _ = ngram.score(model.table(o), o, ef, et, 21, 20)
@@ -118,6 +129,7 @@ def run_ngram(kind: str) -> dict:
         flat, tg = dna_train_stream(max(DNA_ORDERS) - 1)
         model = ngram.KneserNey.fit(flat, tg, max(DNA_ORDERS), 4, 4)
         ef, et, labels, _ = dna_targets()
+        cache["test/cluster"] = et // DNA_CHUNK
         out["test"] = {"uniform": summarise(np.full(len(et), -2.0), np.zeros(len(et)))}
         for o in DNA_ORDERS:
             logp, pred, _ = ngram.score(model.table(o), o, ef, et, 4, 4)
@@ -128,8 +140,8 @@ def run_ngram(kind: str) -> dict:
 
 
 # ----------------------------------------------------------------- neural
-def load_model(kind: str, name: str, dev):
-    ck = torch.load(ROOT / "checkpoints" / f"{kind}_{name}.pt", map_location="cpu")
+def load_model(kind: str, name: str, seed: int, dev):
+    ck = torch.load(ROOT / "checkpoints" / f"{run_name(kind, name, data.SPLIT_SEED, seed)}.pt", map_location="cpu")
     m = build(ck["model"], Config(**ck["cfg"]))
     m.load_state_dict(ck["state"])
     return m.to(dev).eval()
@@ -142,11 +154,12 @@ def symbol_logprobs(model, x: torch.Tensor, kind: str) -> torch.Tensor:
     return torch.log_softmax(logits.float(), -1) / math.log(2)
 
 
-def run_neural(kind: str) -> dict:
+def run_neural(kind: str, seeds: list[int]) -> dict:
     dev = device()
     out, cache = {}, {}
-    for name in ("gpt", "lstm"):
-        model = load_model(kind, name, dev)
+    for name, seed in ((n, s) for n in ("gpt", "lstm") for s in seeds):
+        model = load_model(kind, name, seed, dev)
+        key = f"{name}/seed{seed}"
         if kind == "protein":
             for split in ("test_seen", "test_novel"):
                 _, _, _, _, seqs = protein_targets(split)
@@ -168,13 +181,13 @@ def run_neural(kind: str) -> dict:
                         lp[j] = pj.gather(1, t[:, None])[:, 0].numpy()
                         pr[j] = (pj.argmax(1) == t).numpy()
                 logp, corr = np.concatenate(lp), np.concatenate(pr)
-                out.setdefault(split, {})[name] = summarise(logp, corr)
-                cache[f"{split}/{name}"] = logp.astype(np.float32)
+                out.setdefault(split, {})[key] = summarise(logp, corr)
+                cache[f"{split}/{key}"] = logp.astype(np.float32)
         else:
             sym, tg, _, segs = dna_targets()
             logp, corr = dna_neural_scores(model, sym, segs, dev)
-            out.setdefault("test", {})[name] = summarise(logp, corr)
-            cache[f"test/{name}"] = logp.astype(np.float32)
+            out.setdefault("test", {})[key] = summarise(logp, corr)
+            cache[f"test/{key}"] = logp.astype(np.float32)
     save_cache(kind, cache)
     return out
 
@@ -204,23 +217,27 @@ def dna_neural_scores(model, sym, segs, dev, T: int = 512):
 
 # ----------------------------------------------------------------- context sweep
 def sweep_targets(kind: str, split: str):
-    """Targets with >= max(SWEEP_K) symbols of preceding context."""
+    """Targets with >= max(SWEEP_K) symbols of preceding context.
+
+    Returns (context, target, cluster): cluster is the target's protein family
+    or genome chunk, the unit the report bootstraps over.
+    """
     rng = np.random.default_rng(7)
     K = max(SWEEP_K)
     if kind == "protein":
-        seqs = protein_subset(split, N_EVAL)
+        seqs, fam = protein_subset(split, N_EVAL, families=True)
         cand = [(i, p) for i, s in enumerate(seqs) for p in range(K, len(s))]
         pick = rng.choice(len(cand), size=min(SWEEP_N, len(cand)), replace=False)
         ctx = np.stack([seqs[cand[c][0]][cand[c][1] - K: cand[c][1]] for c in pick]).astype(np.int64)
         tgt = np.array([seqs[cand[c][0]][cand[c][1]] for c in pick], dtype=np.int64)
-        return ctx, tgt
+        return ctx, tgt, fam[[cand[c][0] for c in pick]]
     sym, tg, _, _ = dna_targets(1 if split == "val" else 2)
     pick = rng.choice(tg, size=SWEEP_N, replace=False)
     ctx = np.stack([sym[p - K: p] for p in pick]) + N_SPECIAL
-    return ctx.astype(np.int64), (sym[pick] + N_SPECIAL).astype(np.int64)
+    return ctx.astype(np.int64), (sym[pick] + N_SPECIAL).astype(np.int64), pick // DNA_CHUNK
 
 
-def run_context(kind: str) -> dict:
+def run_context(kind: str, seeds: list[int]) -> dict:
     dev = device()
     splits = ("test_seen", "test_novel") if kind == "protein" else ("test",)
     C, V = (21, 20) if kind == "protein" else (4, 4)
@@ -228,13 +245,13 @@ def run_context(kind: str) -> dict:
     flat, tg = protein_train_stream() if kind == "protein" else dna_train_stream(N - 1)
     ng = ngram.KneserNey.fit(flat, tg, N, C, V)
     del flat, tg
-    out = {}
+    out, cache = {}, {}
     for split in splits:
-        ctx, tgt = sweep_targets(kind, split)
+        ctx, tgt, _ = sweep_targets(kind, split)
         t = torch.from_numpy(tgt - N_SPECIAL)
         out[split] = {}
-        for name in ("gpt", "lstm"):
-            model = load_model(kind, name, dev)
+        for name, seed in ((n, s) for n in ("gpt", "lstm") for s in seeds):
+            model = load_model(kind, name, seed, dev)
             res = {}
             for k in SWEEP_K:
                 lps = []
@@ -243,7 +260,8 @@ def run_context(kind: str) -> dict:
                     lps.append(symbol_logprobs(model, x, kind)[:, -1].cpu())
                 lp = torch.cat(lps).gather(1, t[:, None])[:, 0]
                 res[k] = float(-lp.mean())
-            out[split][name] = res
+            out[split][f"{name}/seed{seed}"] = res
+            cache[f"sweep/{split}/{name}/seed{seed}"] = lp.numpy().astype(np.float32)  # k = max(SWEEP_K)
         # n-gram reference on the same targets
         stream = np.concatenate([ctx - N_SPECIAL, (tgt - N_SPECIAL)[:, None]], 1)
         flat_e = stream.reshape(-1)
@@ -252,6 +270,7 @@ def run_context(kind: str) -> dict:
         for o in (range(1, N + 1) if kind == "protein" else DNA_ORDERS):
             logp, _, _ = ngram.score(ng.table(o), o, flat_e, pos, C, V)
             out[split]["ngram"][o - 1] = float(-logp.mean())  # keyed by context length
+    save_cache(kind, cache)
     return out
 
 
@@ -273,7 +292,7 @@ def run_cache(kind: str) -> dict:
     tables = {o: ng.table(o) for o in range(1, base_order + 1)}
 
     def parts(split):
-        ctx, tgt = sweep_targets(kind, split)
+        ctx, tgt, clu = sweep_targets(kind, split)
         sym, t = ctx - N_SPECIAL, tgt - N_SPECIAL
         stream = np.concatenate([sym, t[:, None]], 1)
         pos = np.arange(len(stream)) * stream.shape[1] + stream.shape[1] - 1
@@ -283,7 +302,7 @@ def run_cache(kind: str) -> dict:
             logp, _, _ = ngram.score(tables[o], o, stream.reshape(-1), pos, C, V)
             hits = (sym[:, -k:] == t[:, None]).sum(1)
             out[k] = (2.0 ** logp, hits, bg[t])
-        return out
+        return out, clu
 
     lams = np.linspace(0, 1, 21)
     alphas = [0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500]
@@ -291,7 +310,7 @@ def run_cache(kind: str) -> dict:
     def bits(p_ng, hits, b, k, lam, a):
         return float(-np.log2(lam * p_ng + (1 - lam) * (hits + a * b) / (k + a)).mean())
 
-    val = parts("val")
+    val, _ = parts("val")
     best = {}
     for k in SWEEP_K:
         grid = [(bits(*val[k], k, l, a), l, a) for l in lams for a in alphas]
@@ -299,10 +318,17 @@ def run_cache(kind: str) -> dict:
         best[k] = (float(l), float(a))
     splits = ("test_seen", "test_novel") if kind == "protein" else ("test",)
     res = {"base_order": base_order, "tuned_on_val": {str(k): v for k, v in best.items()}}
+    cache, K = {}, max(SWEEP_K)
     for split in splits:
-        te = parts(split)
+        te, clu = parts(split)
         res[split] = {"ngram_plus_cache": {k: bits(*te[k], k, *best[k]) for k in SWEEP_K},
                       "ngram_alone": {k: float(-np.log2(te[k][0]).mean()) for k in SWEEP_K}}
+        p_ng, hits, b = te[K]
+        lam, a = best[K]
+        cache[f"sweep/{split}/ngram_alone"] = np.log2(p_ng).astype(np.float32)
+        cache[f"sweep/{split}/ngram_plus_cache"] = np.log2(lam * p_ng + (1 - lam) * (hits + a * b) / (K + a)).astype(np.float32)
+        cache[f"sweep/{split}/cluster"] = clu
+    save_cache(kind, cache)
     return res
 
 
@@ -403,10 +429,10 @@ def js(p, q) -> float:
     return float(0.5 * (p * np.log2(p / m)).sum() + 0.5 * (q * np.log2(q / m)).sum())
 
 
-def run_generate(kind: str) -> dict:
+def run_generate(kind: str, seeds: list[int]) -> dict:
     assert kind == "protein"
     dev = device()
-    model = load_model("protein", "gpt", dev)
+    model = load_model("protein", "gpt", seeds[0], dev)
     ref = train_kmers()
     natural = protein_subset("test_novel", 500, seed=3)
     gen = []
@@ -423,7 +449,7 @@ def run_generate(kind: str) -> dict:
         p["composition_js_vs_train"] = js(p["composition"], bg)
         p["kmer10_shared_with_train"] = shared_rate(kmer_codes([s for s in seqs if len(s) >= 10]), ref)
         out[name] = p
-    (RES / "generated_proteins.fasta").write_text(
+    (RES / group(kind) / "generated_proteins.fasta").write_text(
         "".join(f">gpt_sample_{i}\n{''.join(AMINO[c - N_SPECIAL] for c in s)}\n" for i, s in enumerate(gen)))
     return out
 
@@ -431,22 +457,36 @@ def run_generate(kind: str) -> dict:
 # ----------------------------------------------------------------- io
 def save_cache(kind: str, arrays: dict) -> None:
     CACHE.mkdir(parents=True, exist_ok=True)
-    path = CACHE / f"{kind}_logp.npz"
+    path = CACHE / f"{group(kind)}.npz"
     old = dict(np.load(path)) if path.exists() else {}
     old.update(arrays)
     np.savez(path, **old)
+
+
+def merge(old: dict, new: dict) -> dict:
+    """Recursive dict update, so a part rerun for more seeds keeps earlier seeds."""
+    for k, v in new.items():
+        old[k] = merge(old[k], v) if isinstance(v, dict) and isinstance(old.get(k), dict) else v
+    return old
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("part", choices=["ngram", "neural", "context", "cache", "audit", "generate"])
     ap.add_argument("--kind", choices=["protein", "dna"], required=True)
+    ap.add_argument("--split_seed", type=int, default=0, help="protein family split")
+    ap.add_argument("--seeds", type=int, nargs="+", default=[0], help="training seeds of the neural models")
     args = ap.parse_args()
-    fn = {"ngram": run_ngram, "neural": run_neural, "context": run_context,
-          "cache": run_cache, "audit": run_audit, "generate": run_generate}[args.part]
-    res = fn(args.kind)
-    RES.mkdir(exist_ok=True)
-    (RES / f"{args.part}_{args.kind}.json").write_text(json.dumps(res, indent=2))
+    data.set_split_seed(args.split_seed)
+    if args.part in ("neural", "context", "generate"):
+        res = {"neural": run_neural, "context": run_context, "generate": run_generate}[args.part](args.kind, args.seeds)
+    else:
+        res = {"ngram": run_ngram, "cache": run_cache, "audit": run_audit}[args.part](args.kind)
+    out = RES / group(args.kind) / f"{args.part}.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    if out.exists() and args.part in ("neural", "context"):
+        res = merge(json.loads(out.read_text()), json.loads(json.dumps(res)))
+    out.write_text(json.dumps(res, indent=2))
     print(json.dumps(res, indent=2)[:3000])
 
 

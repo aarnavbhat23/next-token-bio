@@ -33,7 +33,7 @@ from pathlib import Path
 import numpy as np
 
 from . import ngram
-from .data import PROC, load_protein
+from .data import PROC, load_protein, protein_dir
 from .seqscore import ROOT, load_checkpoint, neural_logp, ngram_logp, to_str
 
 MM = PROC / "mmseqs"
@@ -192,7 +192,7 @@ def run_score() -> dict:
 
     out = {"eval_subset": {"sequences": int(len(idx)), "families": len(set(fam.tolist())),
                            "residues": int(lens.sum())}, "filters": {}}
-    accs = (PROC / "protein_test_novel_accessions.txt").read_text().split()
+    accs = (protein_dir() / "protein_test_novel_accessions.txt").read_text().split()
     (RES / "homology").mkdir(parents=True, exist_ok=True)
     shared = novel_sharing_train(read_tsv(MM / "c30_cluster.tsv"))
     meta = json.loads((MM / "c30_meta.json").read_text())
