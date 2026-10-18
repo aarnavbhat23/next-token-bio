@@ -301,4 +301,4 @@ The seed sweep trains the protein GPT and LSTM on 3 family splits × 2 seeds and
 
 Code: MIT. UniProtKB data is [CC BY 4.0](https://www.uniprot.org/help/license) (The UniProt Consortium). The E. coli genome and annotation are NCBI RefSeq records, which NCBI places no restrictions on. Raw and processed data are not committed; `scripts/download.sh` fetches them.
 
-Built with AI assistance. All numbers come from the recorded runs in `results/`. There is no independent review or adoption claim.
+All numbers come from the recorded runs in `results/`. There is no independent review or adoption claim.
