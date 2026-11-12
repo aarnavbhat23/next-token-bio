@@ -2,13 +2,13 @@
 
 [![tests](https://github.com/aarnavbhat23/next-token-bio/actions/workflows/tests.yml/badge.svg)](https://github.com/aarnavbhat23/next-token-bio/actions/workflows/tests.yml)
 
-When a language model "predicts the next amino acid" or "the next nucleotide", how much of that is biological grammar, and how much is recognising a close relative from the training set?
+A six-residue lookup model beat the neural models on familiar protein families and fell below uniform guessing on held-out families. These experiments compare what the same models learn from protein sequences and from DNA.
 
 This repository trains next-token predictors from scratch on **269k Swiss-Prot proteins** and the **E. coli K-12 genome**: a Kneser-Ney n-gram ladder, a 2.0M-parameter LSTM and a 1.9M-parameter GPT, with GPT and LSTM given identical token budgets. Every model is scored on the same positions in two kinds of test protein: **new members of families seen in training**, and **790 whole families never seen in training**. The genome is evaluated on held-out 50 kb blocks, with each base labelled as non-coding or by its codon position.
 
 ![Next-token loss for every model](results/figures/fig1_ladder.png)
 
-## What happened
+## Prediction error
 
 Bits per symbol, lower is better. Uniform guessing scores 4.322 over amino acids and 2.000 over bases.
 
